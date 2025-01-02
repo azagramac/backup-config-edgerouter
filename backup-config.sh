@@ -22,13 +22,21 @@ else
     ssh $server_user@$server_backup mkdir -p "$server_folder"
 fi
 
-cd /tmp
+cd /tmp || exit
 tar -czvf $file_backup $folder_backup > /dev/null 2>&1
 check_md5_local=$(md5sum /tmp/$file_backup | awk '{print $1}')
 
 scp $file_backup $server_user@$server_backup:$server_folder/
 check_md5_server=$(ssh $server_user@$server_backup md5sum $server_folder/$file_backup | awk '{print $1}')
 verifyfile=$(ssh $server_user@$server_backup ls -l1t $server_folder | awk '{print $1, $9}' | head -2 | tail -1)
+
+function _sendMessage() {
+    curl -s -X POST $api_sendMessage -d chat_id=$chatid -d text="$1"
+}
+
+function _sendDocument() {
+    curl -s -X POST $api_sendDocument -F chat_id=$chatid -F document=@"$1"
+}
 
 if [ "$check_md5_local" == "$check_md5_server" ]; then
     hashmd5="$check_md5_local"
@@ -37,12 +45,12 @@ else
 fi
 
 if [ "$check_md5_local" == "$check_md5_server" ]; then
-        curl -s -X POST $api_sendMessage -d chat_id=$chatid \
-        -d text="$(printf "✅ <b>Backup successfully created</b>\n\nHostname: $host\nMD5:  <code>$hashmd5 </code>\nFile:\n <code>$verifyfile</code>")" > /dev/null 2>&1
-        curl -s -X POST $api_sendDocument -F chat_id=$chatid -F document=@"$file_backup" > /dev/null 2>&1
+        _sendMessage "$(printf "✅ <b>Backup successfully created</b>\n\nHostname: $host\nMD5: <code>$hashmd5</code>\nFile:\n <code>$verifyfile</code>")" && _sendDocument "$file_backup" > /dev/null 2>&1
+        exit 0
 else
-        curl -s -X POST $api_sendMessage -d chat_id=$chatid \
-        -d text="$(printf "❌ <b>Backup failed, error MD5</b>\n\nHostname: $host\nError MD5:  <code>$hashmd5 </code>")" > /dev/null 2>&1
+        _sendMessage "$(printf "❌ <b>Backup failed, error MD5</b>\n\nHostname: $host\nError MD5: <code>$hashmd5</code>")" > /dev/null 2>&1
+        exit 1
 fi
 
 rm -rf /tmp/$file_backup
+exit 0
